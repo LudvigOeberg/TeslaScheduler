@@ -1,5 +1,10 @@
 from requests_html import HTML, HTMLSession
 from main import db,AveragePrice, HourPrice
+import datetime
+import time
+from timeloop import Timeloop
+from datetime import timedelta
+
 
 session = HTMLSession() 
 r = session.get('https://elen.nu/timpriser-pa-el-for-elomrade-se3-stockholm')
@@ -22,15 +27,19 @@ for tr in datetable:
                 amount = price.text
                 priceString = amount.split(" ")[0]
                 priceFloat = float(priceString)
-        hourPrice = HourPrice(year = year, month = month, day = day, hour = hour, price = priceFloat)
-        db.session.add(hourPrice)
-        db.session.commit()
-
+        alreadyExists = HourPrice.query.filter_by(year=year,month=month, day=day, hour=hour).all()
+        if(alreadyExists == None):
+            hourPrice = HourPrice(year = year, month = month, day = day, hour = hour, price = priceFloat)
+            db.session.add(hourPrice)
+            db.session.commit()
 averagetable = r.html.find(".elspot-area-price")[2].text
 priceAverageString = (averagetable.split(" ")[0])
 priceAverageFloat1 = float(priceAverageString.split(",")[0])
 priceAverageFloat2 = float(priceAverageString.split(",")[1])/100
 priceAverage = priceAverageFloat1 + priceAverageFloat2
-averagePrice = AveragePrice(year = year, month = month, day = day,priceAverage = priceAverage)
-db.session.add(averagePrice)
-db.session.commit()
+
+alreadyExists2 = AveragePrice.query.filter_by(year=year,month=month, day=day).all()
+if(alreadyExists2 == None):
+    averagePrice = AveragePrice(year = year, month = month, day = day,priceAverage = priceAverage)
+    db.session.add(averagePrice)
+    db.session.commit()
