@@ -9,6 +9,8 @@ import time
 import requests
 from timeloop import Timeloop
 from datetime import timedelta
+from datetime import datetime
+from datetime import date
 
 
 app = Flask(__name__)
@@ -46,72 +48,114 @@ class AveragePrice(db.Model):
         return dict(id = self.id, year = self.year, month = self.month, day = self.day,priceAverage = self.priceAverage)
 
 
-session = HTMLSession() 
-r = session.get('https://elen.nu/timpriser-pa-el-for-elomrade-se3-stockholm')
-datetable = r.html.find('tr')
-for tr in datetable:
-    date = tr.find('td', first = True)
-    if (date != None):
-        date = date.text
-        year = date.split('-')[0]
-        month = date.split('-')[1]
-        splitday = date.split('-')[2]
-        day = splitday.split(' ')[0]
-        time = date.split(" ")[1]
-        hour = time.split(":")[0]
-        priceList = tr.find('td')
-        counter = 0
-        for price in priceList:
-            counter = counter +1 
-            if (counter % 2 == 0):
-                amount = price.text
-                priceString = amount.split(" ")[0]
-                priceFloat = float(priceString)
-        alreadyExists = HourPrice.query.filter_by(year=year,month=month, day=day, hour=hour).all()
-        if(alreadyExists == None):
-            hourPrice = HourPrice(year = year, month = month, day = day, hour = hour, price = priceFloat)
-            db.session.add(hourPrice)
-            db.session.commit()
-averagetable = r.html.find(".elspot-area-price")[2].text
-priceAverageString = (averagetable.split(" ")[0])
-priceAverageFloat1 = float(priceAverageString.split(",")[0])
-priceAverageFloat2 = float(priceAverageString.split(",")[1])/100
-priceAverage = priceAverageFloat1 + priceAverageFloat2
+tl = Timeloop()
 
-alreadyExists2 = AveragePrice.query.filter_by(year=year,month=month, day=day).all()
-if(alreadyExists2 == None):
-    averagePrice = AveragePrice(year = year, month = month, day = day,priceAverage = priceAverage)
-    db.session.add(averagePrice)
-    db.session.commit()
+def login():
+    params = {"grant_type" : "password",
+    "client_secret" : "c7257eb71a564034f9419ee651c7d0e5f7aa6bfbd18bafb5c5c033b093bb2fa3",
+    "client_id" : "81527cff06843c8634fdc09e8ac0abefb46ac849f38fe1e431c2ef2106796384"}
+    file = open("teslapassword.txt","r")
+    params.update({"password" : file.read()})
+    file.close()
+    file = open("teslaemail.txt","r")
+    params.update({"email" : file.read()})
+    file.close()
+    response = requests.post("https://owner-api.teslamotors.com/oauth/token", data = params)
+    data = response.json()
+    access_token = data['access_token']
+    global headers ##Kolla upp bättre lösning sen
+    headers  = {"Authorization": "Bearer " + access_token}
+
+    response1 = requests.get("https://owner-api.teslamotors.com/api/1/vehicles", headers = headers)
+    data = response1.json()['response'][0]
+    global id #Kolla upp bättre lösning sen
+    id =  data['id']
+    print("hämtat inloggningsdata")
 
 
-params = {
-"email" : "tesla@ludvigoberg.me",
-"password" : "8WboW9aV6Bnq%3",
-"grant_type": "password",
-"client_secret" : "c7257eb71a564034f9419ee651c7d0e5f7aa6bfbd18bafb5c5c033b093bb2fa3",
-"client_id" : "81527cff06843c8634fdc09e8ac0abefb46ac849f38fe1e431c2ef2106796384"}
-response = requests.post("https://owner-api.teslamotors.com/oauth/token", data = params)
-data = response.json()
-access_token = data['access_token']
-headers = {"Authorization": "Bearer " + access_token}
+@tl.job(interval=timedelta(hours = 1))
+def getPrices():
+    session = HTMLSession() 
+    r = session.get('https://elen.nu/timpriser-pa-el-for-elomrade-se3-stockholm')
+    datetable = r.html.find('tr')
+    for tr in datetable:
+        date = tr.find('td', first = True)
+        if (date != None):
+            date = date.text
+            year = date.split('-')[0]
+            month = date.split('-')[1]
+            splitday = date.split('-')[2]
+            day = splitday.split(' ')[0]
+            time = date.split(" ")[1]
+            hour = time.split(":")[0]
+            priceList = tr.find('td')
+            counter = 0
+            for price in priceList:
+                counter = counter +1 
+                if (counter % 2 == 0):
+                    amount = price.text
+                    priceString = amount.split(" ")[0]
+                    priceFloat = float(priceString)
+            alreadyExists = HourPrice.query.filter_by(year=year,month=month, day=day, hour=hour).all()
+            if(len(alreadyExists) == 0):
+                hourPrice = HourPrice(year = year, month = month, day = day, hour = hour, price = priceFloat)
+                db.session.add(hourPrice)
+                db.session.commit()
+                print("hämtat timmdata")
+    averagetable = r.html.find(".elspot-area-price")[2].text
+    priceAverageString = (averagetable.split(" ")[0])
+    priceAverageFloat1 = float(priceAverageString.split(",")[0])
+    priceAverageFloat2 = float(priceAverageString.split(",")[1])/100
+    priceAverage = priceAverageFloat1 + priceAverageFloat2
 
-response1 = requests.get("https://owner-api.teslamotors.com/api/1/vehicles", headers = headers)
-data = response1.json()['response'][0]
-id = data['id']
+    alreadyExists2 = AveragePrice.query.filter_by(year=year,month=month, day=day).all()
+    if(len(alreadyExists2) == 0):
+        averagePrice = AveragePrice(year = year, month = month, day = day,priceAverage = priceAverage)
+        db.session.add(averagePrice)
+        db.session.commit()
+        print("hämtat genomsnitt")
 
 
-response2 = requests.get("https://owner-api.teslamotors.com/api/1/vehicles/" + str(id) + "/data_request/charge_state", headers = headers)
-data = response2.json()['response']
-currentCharge = data['battery_level']
-currentlyCharging = data['charge_enable_request']
-print(currentCharge)
-print(currentlyCharging)
+@tl.job(interval=timedelta(hours = 10))
+def callLogin():
+    login()
 
-if ( currentCharge <= 95 ) :
 
-    ##Insert logic here later
+@tl.job(interval=timedelta(minutes = 10))
+def getTeslaData():
+    response2 = requests.get("https://owner-api.teslamotors.com/api/1/vehicles/" + str(id) + "/data_request/charge_state", headers = headers)
+    data = response2.json()['response']
+    currentCharge = data['battery_level']
+    currentlyCharging = data['charge_enable_request']
 
+    now = datetime.now()
+    hour = now.strftime("%H")
+    today = date.today()
+    year = today.strftime("%Y")
+    month = today.strftime("%m")
+    day = today.strftime("%d")
+    currentPrice = HourPrice.query.filter_by(year = year, month = month, day = day, hour = hour).all()
+    averageCurrentPrice = AveragePrice.query.filter_by(year = year, month = month, day = day).all()
+    if (currentCharge <= 95 ):
+        if(currentPrice[0].price <= averageCurrentPrice[0].priceAverage):
+            if(currentlyCharging == False):
+                response3 = requests.post("https://owner-api.teslamotors.com/api/1/vehicles/" + str(id) + "/command/charge_start", headers = headers)
+                data = response3.json()
+                print(data)
+                print(day+ " " + hour + " " + "startar ladda")
+                
+            else:
+                print(day+ " " + hour + " " + "Laddar redan")
+        else :
+            if(currentlyCharging == True):
+                response3 = requests.post("https://owner-api.teslamotors.com/api/1/vehicles/" + str(id) + "/command/charge_stop", headers = headers)
+                data = response3.json()
+                print(data)
+                print(day+ " " + hour + " " + "Slutar ladda")
+            else:
+                print(day+ " " + hour + " " + "laddar redan inte")
+
+login()
 
 if __name__ == "__main__": 
-     app.run(debug=True)
+    tl.start(block=True)
