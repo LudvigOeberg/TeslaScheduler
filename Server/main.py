@@ -76,7 +76,7 @@ def login():
     print(response1)
     global id #Kolla upp bättre lösning sen
     id =  data['id']
-    print("hämtat inloggningsdata")
+    print("Getting login information")
 
 login()
 
@@ -109,7 +109,7 @@ def getPrices():
                 hourPrice = HourPrice(year = year, month = month, day = day, hour = hour, price = priceFloat)
                 db.session.add(hourPrice)
                 db.session.commit()
-                print("hämtat timmdata")
+                print("Getting hourly prices")
     averagetable = r.html.find(".elspot-area-price")[2].text
     priceAverageString = (averagetable.split(" ")[0])
     priceAverageFloat1 = float(priceAverageString.split(",")[0])
@@ -121,7 +121,7 @@ def getPrices():
         averagePrice = AveragePrice(year = year, month = month, day = day,priceAverage = priceAverage)
         db.session.add(averagePrice)
         db.session.commit()
-        print("hämtat genomsnitt")
+        print("Getting daily averages")
 
 
 #Every 10 hours calls login function to update API keys
@@ -138,7 +138,7 @@ def getTeslaData():
     if(response2.status_code == 408):
         response5 = requests.post("https://owner-api.teslamotors.com/api/1/vehicles/" + str(id) + "wake_up", headers = headers)
         print(response5.json())
-        print("väcker bilen")
+        print("Waking car")
         getTeslaData()
     else:    
         data = response2.json()['response']
@@ -165,18 +165,18 @@ def getTeslaData():
                         response3 = requests.post("https://owner-api.teslamotors.com/api/1/vehicles/" + str(id) + "/command/charge_start", headers = headers)
                         data = response3.json()
                         print(data)
-                        print(day+ " " + hour + " " + "startar ladda")
+                        print(day+ " " + hour + " " + "Starting to charge")
                         
                     else:
-                        print(day+ " " + hour + " " + "Laddar redan")
+                        print(day+ " " + hour + " " + "Already charging")
                 else :
                     if(currentlyCharging == True):
                         response3 = requests.post("https://owner-api.teslamotors.com/api/1/vehicles/" + str(id) + "/command/charge_stop", headers = headers)
                         data = response3.json()
                         print(data)
-                        print(day+ " " + hour + " " + "Slutar ladda")
+                        print(day+ " " + hour + " " + "Stopping charging")
                     else:
-                        print(day+ " " + hour + " " + "laddar redan inte")
+                        print(day+ " " + hour + " " + "Charging already off")
 
 if __name__ == "__main__": 
     tl.start(block=True)
