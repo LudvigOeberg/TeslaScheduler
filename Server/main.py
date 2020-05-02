@@ -19,6 +19,7 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
 
+#Class that holds the price of each hour
 class HourPrice(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     year = db.Column(db.Integer, nullable = False)
@@ -33,7 +34,7 @@ class HourPrice(db.Model):
     def serialize(self):
         return dict(id = self.id, year = self.year, month = self.month, day = self.day, hour =  self.hour, price = self.price)
 
-
+#Class that holds the average price of that day
 class AveragePrice(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     year = db.Column(db.Integer, nullable = False)
@@ -50,6 +51,7 @@ class AveragePrice(db.Model):
 
 tl = Timeloop()
 
+#Function that loads credentials from file, sends a oauth request to Tesla API. Receive access token and save as a global varialble. Send a Vehicle list request and save ID as global variable
 def login():
     params = {"grant_type" : "password",
     "client_secret" : "c7257eb71a564034f9419ee651c7d0e5f7aa6bfbd18bafb5c5c033b093bb2fa3",
@@ -60,11 +62,15 @@ def login():
     file = open("teslaemail.txt","r")
     params.update({"email" : file.read()})
     file.close()
+
+    #Sends login/oath request to Tesla
     response = requests.post("https://owner-api.teslamotors.com/oauth/token", data = params)
     data = response.json()
     access_token = data['access_token']
     global headers ##Kolla upp bättre lösning sen
     headers  = {"Authorization": "Bearer " + access_token}
+
+    #Sends a request for vechicle list
     response1 = requests.get("https://owner-api.teslamotors.com/api/1/vehicles", headers = headers)
     data = response1.json()['response'][0]
     print(response1)
@@ -75,6 +81,7 @@ def login():
 login()
 
 @tl.job(interval=timedelta(hours = 1))
+#Function that scrapes the hourly and average daily prices from elen.nu and adds them to database
 def getPrices():
     session = HTMLSession() 
     r = session.get('https://elen.nu/timpriser-pa-el-for-elomrade-se3-stockholm')
@@ -117,14 +124,17 @@ def getPrices():
         print("hämtat genomsnitt")
 
 
+#Every 10 hours calls login function to update API keys
 @tl.job(interval=timedelta(hours = 10))
 def callLogin():
     login()
 
-
+#Function that gets charge information and activates/deactivates charging based on price information
 @tl.job(interval=timedelta(minutes = 10))
 def getTeslaData():
+    #Gets charging informaton such as batter level and if currently charging
     response2 = requests.get("https://owner-api.teslamotors.com/api/1/vehicles/" + str(id) + "/data_request/charge_state", headers = headers)
+    #If the car is asleep then wake it up
     if(response2.status_code == 408):
         response5 = requests.post("https://owner-api.teslamotors.com/api/1/vehicles/" + str(id) + "wake_up", headers = headers)
         print(response5.json())
@@ -143,10 +153,13 @@ def getTeslaData():
         day = today.strftime("%d")
         currentPrice = HourPrice.query.filter_by(year = year, month = month, day = day, hour = hour).all()
         averageCurrentPrice = AveragePrice.query.filter_by(year = year, month = month, day = day).all()
+        #If the battery level is below 95% then decide if the car should charge or not
         if (currentCharge <= 95 ):
+            #If there is no hourly price then load prices
             if(len(currentPrice) == 0):
                 getPrices()
             else:
+                #If the current hourly price is lower than the daily average price than charge, otherwise stop charging
                 if(currentPrice[0].price <= averageCurrentPrice[0].priceAverage):
                     if(currentlyCharging == False):
                         response3 = requests.post("https://owner-api.teslamotors.com/api/1/vehicles/" + str(id) + "/command/charge_start", headers = headers)
