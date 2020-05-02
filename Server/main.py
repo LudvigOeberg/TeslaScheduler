@@ -65,13 +65,14 @@ def login():
     access_token = data['access_token']
     global headers ##Kolla upp bättre lösning sen
     headers  = {"Authorization": "Bearer " + access_token}
-
     response1 = requests.get("https://owner-api.teslamotors.com/api/1/vehicles", headers = headers)
     data = response1.json()['response'][0]
+    print(response1)
     global id #Kolla upp bättre lösning sen
     id =  data['id']
     print("hämtat inloggningsdata")
 
+login()
 
 @tl.job(interval=timedelta(hours = 1))
 def getPrices():
@@ -124,38 +125,45 @@ def callLogin():
 @tl.job(interval=timedelta(minutes = 10))
 def getTeslaData():
     response2 = requests.get("https://owner-api.teslamotors.com/api/1/vehicles/" + str(id) + "/data_request/charge_state", headers = headers)
-    data = response2.json()['response']
-    currentCharge = data['battery_level']
-    currentlyCharging = data['charge_enable_request']
+    if(response2.status_code == 408):
+        response5 = requests.post("https://owner-api.teslamotors.com/api/1/vehicles/" + str(id) + "wake_up", headers = headers)
+        print(response5.json())
+        print("väcker bilen")
+        getTeslaData()
+    else:    
+        data = response2.json()['response']
+        currentCharge = data['battery_level']
+        currentlyCharging = data['charge_enable_request']
 
-    now = datetime.now()
-    hour = now.strftime("%H")
-    today = date.today()
-    year = today.strftime("%Y")
-    month = today.strftime("%m")
-    day = today.strftime("%d")
-    currentPrice = HourPrice.query.filter_by(year = year, month = month, day = day, hour = hour).all()
-    averageCurrentPrice = AveragePrice.query.filter_by(year = year, month = month, day = day).all()
-    if (currentCharge <= 95 ):
-        if(currentPrice[0].price <= averageCurrentPrice[0].priceAverage):
-            if(currentlyCharging == False):
-                response3 = requests.post("https://owner-api.teslamotors.com/api/1/vehicles/" + str(id) + "/command/charge_start", headers = headers)
-                data = response3.json()
-                print(data)
-                print(day+ " " + hour + " " + "startar ladda")
-                
+        now = datetime.now()
+        hour = now.strftime("%H")
+        today = date.today()
+        year = today.strftime("%Y")
+        month = today.strftime("%m")
+        day = today.strftime("%d")
+        currentPrice = HourPrice.query.filter_by(year = year, month = month, day = day, hour = hour).all()
+        averageCurrentPrice = AveragePrice.query.filter_by(year = year, month = month, day = day).all()
+        if (currentCharge <= 95 ):
+            if(len(currentPrice) == 0):
+                getPrices()
             else:
-                print(day+ " " + hour + " " + "Laddar redan")
-        else :
-            if(currentlyCharging == True):
-                response3 = requests.post("https://owner-api.teslamotors.com/api/1/vehicles/" + str(id) + "/command/charge_stop", headers = headers)
-                data = response3.json()
-                print(data)
-                print(day+ " " + hour + " " + "Slutar ladda")
-            else:
-                print(day+ " " + hour + " " + "laddar redan inte")
-
-login()
+                if(currentPrice[0].price <= averageCurrentPrice[0].priceAverage):
+                    if(currentlyCharging == False):
+                        response3 = requests.post("https://owner-api.teslamotors.com/api/1/vehicles/" + str(id) + "/command/charge_start", headers = headers)
+                        data = response3.json()
+                        print(data)
+                        print(day+ " " + hour + " " + "startar ladda")
+                        
+                    else:
+                        print(day+ " " + hour + " " + "Laddar redan")
+                else :
+                    if(currentlyCharging == True):
+                        response3 = requests.post("https://owner-api.teslamotors.com/api/1/vehicles/" + str(id) + "/command/charge_stop", headers = headers)
+                        data = response3.json()
+                        print(data)
+                        print(day+ " " + hour + " " + "Slutar ladda")
+                    else:
+                        print(day+ " " + hour + " " + "laddar redan inte")
 
 if __name__ == "__main__": 
     tl.start(block=True)
