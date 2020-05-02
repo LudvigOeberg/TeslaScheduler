@@ -54,8 +54,8 @@ tl = Timeloop()
 #Function that loads credentials from file, sends a oauth request to Tesla API. Receive access token and save as a global varialble. Send a Vehicle list request and save ID as global variable
 def login():
     params = {"grant_type" : "password",
-    "client_secret" : "c7257eb71a564034f9419ee651c7d0e5f7aa6bfbd18bafb5c5c033b093bb2fa3",
-    "client_id" : "81527cff06843c8634fdc09e8ac0abefb46ac849f38fe1e431c2ef2106796384"}
+    "client_secret" : "c7257eb71a564034f9419ee651c7d0e5f7aa6bfbd18bafb5c5c033b093bb2fa3", #Key reverse engineered from Tesla API, hardcoded
+    "client_id" : "81527cff06843c8634fdc09e8ac0abefb46ac849f38fe1e431c2ef2106796384"} #Key reverse engineered from Tesla API, hardcoded
     file = open("teslapassword.txt","r")
     params.update({"password" : file.read()})
     file.close()
@@ -130,7 +130,7 @@ def callLogin():
     login()
 
 #Function that gets charge information and activates/deactivates charging based on price information
-@tl.job(interval=timedelta(minutes = 10))
+@tl.job(interval=timedelta(minutes = 1))
 def getTeslaData():
     #Gets charging informaton such as batter level and if currently charging
     response2 = requests.get("https://owner-api.teslamotors.com/api/1/vehicles/" + str(id) + "/data_request/charge_state", headers = headers)
@@ -144,7 +144,9 @@ def getTeslaData():
         data = response2.json()['response']
         currentCharge = data['battery_level']
         currentlyCharging = data['charge_enable_request']
+        chargeLimit = data['charge_limit_soc']
 
+        #Get current date and time, retrieve the current hourly price and average price.
         now = datetime.now()
         hour = now.strftime("%H")
         today = date.today()
@@ -154,7 +156,7 @@ def getTeslaData():
         currentPrice = HourPrice.query.filter_by(year = year, month = month, day = day, hour = hour).all()
         averageCurrentPrice = AveragePrice.query.filter_by(year = year, month = month, day = day).all()
         #If the battery level is below 95% then decide if the car should charge or not
-        if (currentCharge <= 95 ):
+        if (currentCharge <= 95 and  currentCharge <= chargeLimit):
             #If there is no hourly price then load prices
             if(len(currentPrice) == 0):
                 getPrices()
@@ -177,6 +179,8 @@ def getTeslaData():
                         print(day+ " " + hour + " " + "Stopping charging")
                     else:
                         print(day+ " " + hour + " " + "Charging already off")
+        else:
+            print("Fully charged")
 
 if __name__ == "__main__": 
     tl.start(block=True)
